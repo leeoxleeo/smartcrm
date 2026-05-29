@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+:root {
+  --bg-main: #101010;
+  --bg-panel: #1a1a1a;
+  --bg-subtle: #222222;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+}
+
+html,
+body {
+  background: #101010;
+  color: white;
+}
