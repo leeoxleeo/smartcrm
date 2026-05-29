@@ -15,7 +15,8 @@ import {
 import { supabase } from "@/lib/supabase";
 import { toaster } from "@/lib/toaster";
 import { EmptyState } from "@/components/ui/EmptyState";
-import type { AnaliseConversao, ProdutoAnalise, GargaloProduto } from "@/lib/types";
+import { RfmPanel } from "@/components/crm/RfmPanel";
+import type { AnaliseConversao, ProdutoAnalise, GargaloProduto, AtribuicaoResumo, AtribuicaoRegra } from "@/lib/types";
 
 interface Props {
   clienteId: string | null;
@@ -184,6 +185,211 @@ function ProdutoAnaliseCard({ produto, mediaConversao }: { produto: ProdutoAnali
         <Text fontSize="xs" color="teal.400" fontWeight="semibold" mb={1}>Sugestão</Text>
         <Text fontSize="sm" color="teal.100" lineHeight="1.6">{produto.sugestao}</Text>
       </Box>
+    </Box>
+  );
+}
+
+// ─── Attribution panel ────────────────────────────────────────────────────────
+
+const TEMPLATE_LABEL: Record<string, string> = {
+  produto_visto:        "Produto Visto",
+  vitrine_similares:    "Vitrine Similares",
+  vitrine_combinacoes:  "Vitrine Combinações",
+  vitrine_sugestoes:    "Vitrine Sugestões",
+  vitrine_inteligente:  "Vitrine Inteligente",
+  custom:               "HTML Customizado",
+};
+
+function AtribuicaoPanel({ clienteId }: { clienteId: string }) {
+  const [resumo, setResumo] = useState<AtribuicaoResumo | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  async function carregar() {
+    setLoading(true);
+    try {
+      // Pull attribution per rule directly from Supabase
+      const { data: atrib } = await supabase
+        .from("crm_atribuicao_receita")
+        .select("regra_id, receita")
+        .eq("cliente_id", clienteId);
+
+      const { data: disparos } = await supabase
+        .from("crm_email_disparos")
+        .select("regra_id")
+        .eq("cliente_id", clienteId);
+
+      const { data: regras } = await supabase
+        .from("crm_trigger_rules")
+        .select("id, nome, email_template_tipo")
+        .eq("cliente_id", clienteId);
+
+      if (!regras) { setLoading(false); return; }
+
+      // Aggregate by regra_id
+      const convMap = new Map<string, { receita: number; conversoes: number }>();
+      for (const a of (atrib ?? [])) {
+        const rid = a.regra_id ?? "__sem_regra__";
+        const cur = convMap.get(rid) ?? { receita: 0, conversoes: 0 };
+        convMap.set(rid, { receita: cur.receita + (a.receita ?? 0), conversoes: cur.conversoes + 1 });
+      }
+
+      const disparoMap = new Map<string, number>();
+      for (const d of (disparos ?? [])) {
+        const rid = d.regra_id ?? "__sem_regra__";
+        disparoMap.set(rid, (disparoMap.get(rid) ?? 0) + 1);
+      }
+
+      const regrasList: AtribuicaoRegra[] = regras
+        .filter((r) => (disparoMap.get(r.id) ?? 0) > 0)
+        .map((r) => {
+          const total = disparoMap.get(r.id) ?? 0;
+          const { receita, conversoes } = convMap.get(r.id) ?? { receita: 0, conversoes: 0 };
+          return {
+            regra_id:         r.id,
+            regra_nome:       r.nome,
+            template_tipo:    r.email_template_tipo,
+            total_disparos:   total,
+            conversoes,
+            receita_atribuida: receita,
+            taxa_conversao:   total > 0 ? (conversoes / total) * 100 : 0,
+            receita_por_email: total > 0 ? receita / total : 0,
+          };
+        })
+        .sort((a, b) => b.receita_atribuida - a.receita_atribuida);
+
+      setResumo({
+        regras: regrasList,
+        receita_total:    regrasList.reduce((s, r) => s + r.receita_atribuida, 0),
+        conversoes_total: regrasList.reduce((s, r) => s + r.conversoes, 0),
+      });
+      setOpen(true);
+    } catch {
+      toaster.create({ title: "Erro ao carregar atribuição", type: "error" });
+    }
+    setLoading(false);
+  }
+
+  const fmtBRL = (v: number) =>
+    v > 0
+      ? `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : "—";
+
+  return (
+    <Box>
+      <Separator borderColor="whiteAlpha.100" mb={6} />
+
+      <Flex align="center" justify="space-between" mb={open && resumo ? 4 : 0} wrap="wrap" gap={3}>
+        <Box>
+          <Flex align="center" gap={2}>
+            <Text fontSize="xs" fontWeight="semibold" textTransform="uppercase" letterSpacing="wider" color="whiteAlpha.500">
+              Atribuição de Receita
+            </Text>
+            <Badge colorPalette="green" size="sm" variant="subtle">7 dias</Badge>
+          </Flex>
+          <Text fontSize="xs" color="whiteAlpha.400" mt={0.5}>
+            Receita gerada por cada automação — janela last-touch de 7 dias
+          </Text>
+        </Box>
+        <Flex gap={2} align="center">
+          {resumo && (
+            <Button size="xs" variant="ghost" color="whiteAlpha.400"
+              _hover={{ color: "white", bg: "whiteAlpha.100" }}
+              loading={loading} onClick={carregar}>
+              Atualizar
+            </Button>
+          )}
+          <Button
+            size="sm"
+            loading={loading}
+            onClick={() => { if (!resumo) carregar(); else setOpen((v) => !v); }}
+            style={{ background: "linear-gradient(135deg,rgba(72,187,120,0.8),rgba(56,178,172,0.8))", color: "white" }}
+          >
+            {!resumo ? "Ver Atribuição" : open ? "Recolher" : "Ver Atribuição"}
+          </Button>
+        </Flex>
+      </Flex>
+
+      {open && resumo && (
+        <VStack gap={3} align="stretch">
+          {/* Totals */}
+          <Flex gap={4} p={4} bg="whiteAlpha.50" border="1px solid" borderColor="green.900" borderRadius="xl" wrap="wrap">
+            <Box flex={1} minW="140px">
+              <Text fontSize="xs" color="whiteAlpha.400">Receita total atribuída</Text>
+              <Text fontSize="xl" fontWeight="bold" color="green.300">{fmtBRL(resumo.receita_total)}</Text>
+            </Box>
+            <Box flex={1} minW="120px">
+              <Text fontSize="xs" color="whiteAlpha.400">Conversões</Text>
+              <Text fontSize="xl" fontWeight="bold" color="teal.300">{resumo.conversoes_total}</Text>
+            </Box>
+            <Box flex={1} minW="120px">
+              <Text fontSize="xs" color="whiteAlpha.400">Automações com receita</Text>
+              <Text fontSize="xl" fontWeight="bold" color="blue.300">
+                {resumo.regras.filter((r) => r.receita_atribuida > 0).length}
+              </Text>
+            </Box>
+          </Flex>
+
+          {resumo.regras.length === 0 ? (
+            <Box p={4} textAlign="center">
+              <Text fontSize="sm" color="whiteAlpha.400">
+                Nenhuma automação com disparos registrados ainda.
+              </Text>
+            </Box>
+          ) : (
+            <>
+              {/* Table header */}
+              <Flex px={4} py={2} gap={3}>
+                <Text fontSize="xs" color="whiteAlpha.400" flex={2}>Automação</Text>
+                <Text fontSize="xs" color="whiteAlpha.400" w="70px" textAlign="right">Disparos</Text>
+                <Text fontSize="xs" color="whiteAlpha.400" w="80px" textAlign="right">Conversões</Text>
+                <Text fontSize="xs" color="whiteAlpha.400" w="110px" textAlign="right">Receita</Text>
+                <Text fontSize="xs" color="whiteAlpha.400" w="90px" textAlign="right">Por email</Text>
+                <Text fontSize="xs" color="whiteAlpha.400" w="70px" textAlign="right">Conv.%</Text>
+              </Flex>
+
+              {resumo.regras.map((r) => (
+                <Flex
+                  key={r.regra_id}
+                  px={4} py={3} gap={3}
+                  bg="whiteAlpha.50"
+                  border="1px solid"
+                  borderColor={r.receita_atribuida > 0 ? "green.900" : "whiteAlpha.100"}
+                  borderRadius="xl"
+                  align="center"
+                  _hover={{ borderColor: "whiteAlpha.200" }}
+                >
+                  <Box flex={2} minW={0}>
+                    <Text fontSize="sm" fontWeight="medium" color="white" truncate>{r.regra_nome}</Text>
+                    <Text fontSize="xs" color="whiteAlpha.400">
+                      {TEMPLATE_LABEL[r.template_tipo] ?? r.template_tipo}
+                    </Text>
+                  </Box>
+                  <Text w="70px" fontSize="sm" color="whiteAlpha.600" textAlign="right">
+                    {r.total_disparos}
+                  </Text>
+                  <Text w="80px" fontSize="sm" color={r.conversoes > 0 ? "teal.300" : "whiteAlpha.400"} fontWeight={r.conversoes > 0 ? "bold" : "normal"} textAlign="right">
+                    {r.conversoes}
+                  </Text>
+                  <Text w="110px" fontSize="sm" color={r.receita_atribuida > 0 ? "green.300" : "whiteAlpha.400"} fontWeight={r.receita_atribuida > 0 ? "bold" : "normal"} textAlign="right">
+                    {fmtBRL(r.receita_atribuida)}
+                  </Text>
+                  <Text w="90px" fontSize="sm" color="blue.300" textAlign="right">
+                    {r.receita_por_email > 0 ? fmtBRL(r.receita_por_email) : "—"}
+                  </Text>
+                  <Box w="70px" textAlign="right">
+                    {r.taxa_conversao > 0
+                      ? <Badge colorPalette={r.taxa_conversao >= 5 ? "green" : r.taxa_conversao >= 2 ? "teal" : "gray"} size="sm">
+                          {r.taxa_conversao.toFixed(1)}%
+                        </Badge>
+                      : <Text fontSize="xs" color="whiteAlpha.300">—</Text>}
+                  </Box>
+                </Flex>
+              ))}
+            </>
+          )}
+        </VStack>
+      )}
     </Box>
   );
 }
@@ -512,6 +718,12 @@ export function RelatoriosTab({ clienteId }: Props) {
           </VStack>
         )}
       </Box>
+
+      {/* RFM Segmentation */}
+      <RfmPanel clienteId={clienteId} />
+
+      {/* Revenue Attribution */}
+      <AtribuicaoPanel clienteId={clienteId} />
 
       {/* AI Conversion Analysis */}
       <AnaliseConversaoPanel clienteId={clienteId} />

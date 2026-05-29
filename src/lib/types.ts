@@ -199,6 +199,52 @@ export interface ProjetoStats {
   disparos_abertos: number;
 }
 
+// ─── RFM ─────────────────────────────────────────────────────────────────────
+
+export type RfmSegmento =
+  | "champion" | "loyal" | "potential_loyalist" | "new_customer"
+  | "promising" | "need_attention" | "at_risk" | "cant_lose"
+  | "hibernating" | "lost";
+
+export interface RfmSegmentSummary {
+  segmento: RfmSegmento;
+  count: number;
+  valor_total: number;
+  valor_medio: number;
+  frequencia_media: number;
+}
+
+export interface RfmAnalise {
+  segmentos: RfmSegmentSummary[];
+  total_compradores: number;
+  receita_total: number;
+  insight_ia?: string;
+  calculado_em: string;
+  from_cache: boolean;
+  cache_age_min?: number;
+}
+
+// ─── Atribuição de receita ────────────────────────────────────────────────────
+
+export interface AtribuicaoRegra {
+  regra_id: string;
+  regra_nome: string;
+  template_tipo: string;
+  total_disparos: number;
+  conversoes: number;
+  receita_atribuida: number;
+  taxa_conversao: number;
+  receita_por_email: number;
+}
+
+export interface AtribuicaoResumo {
+  regras: AtribuicaoRegra[];
+  receita_total: number;
+  conversoes_total: number;
+}
+
+// ─── Análise de conversão ─────────────────────────────────────────────────────
+
 export type GargaloProduto = "interesse" | "intencao" | "ambos";
 
 export interface ProdutoAnalise {
