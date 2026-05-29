@@ -66,9 +66,9 @@ Deno.serve(async (req) => {
     const firstName = (contact?.nome ?? user.email.split("@")[0]).split(" ")[0];
 
     const utm: UtmParams = {
-      utm_source:   regra.utm_source   ?? undefined,
-      utm_medium:   regra.utm_medium   ?? undefined,
-      utm_campaign: regra.utm_campaign ?? undefined,
+      utm_source:   regra.utm_source   || "smartcrm",
+      utm_medium:   regra.utm_medium   || "email",
+      utm_campaign: regra.utm_campaign || slugify(regra.nome ?? "automacao"),
       utm_content:  regra.utm_content  ?? undefined,
     };
 
@@ -498,6 +498,16 @@ function dbToVitrine(rows: Record<string, unknown>[]): VitrineProductData[] {
 }
 
 // ─── Response helpers ─────────────────────────────────────────────────────────
+
+function slugify(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
 
 function ok(data: unknown) {
   return new Response(JSON.stringify({ ok: true, ...(data as object) }), {

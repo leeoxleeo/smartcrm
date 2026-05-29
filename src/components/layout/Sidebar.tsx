@@ -17,6 +17,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard/crm", label: "CRM Triggers", icon: "⚡" },
   { href: "/dashboard/usuarios", label: "Usuários", icon: "⬟" },
   { href: "/dashboard/configuracoes", label: "Configurações", icon: "⚙" },
+  { href: "/dashboard/manual", label: "Manual de Uso", icon: "⊙" },
 ];
 
 export function Sidebar() {

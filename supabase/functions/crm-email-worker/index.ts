@@ -86,9 +86,9 @@ Deno.serve(async (req) => {
       }
 
       const utm: UtmParams = {
-        utm_source:   regra.utm_source   as string | undefined,
-        utm_medium:   regra.utm_medium   as string | undefined,
-        utm_campaign: regra.utm_campaign as string | undefined,
+        utm_source:   (regra.utm_source   as string | undefined) || "smartcrm",
+        utm_medium:   (regra.utm_medium   as string | undefined) || "email",
+        utm_campaign: (regra.utm_campaign as string | undefined) || slugify(regra.nome as string ?? "automacao"),
         utm_content:  regra.utm_content  as string | undefined,
       };
 
@@ -586,6 +586,16 @@ async function getProductFromEvent(
     item_category: item.item_category as string | undefined,
     item_brand:    item.item_brand as string | undefined,
   };
+}
+
+function slugify(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")   // remove accents
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")       // non-alphanumeric → hyphen
+    .replace(/^-+|-+$/g, "")           // trim leading/trailing hyphens
+    .slice(0, 60);
 }
 
 function json(data: unknown, status: number) {
